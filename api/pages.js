@@ -1,18 +1,23 @@
 const { getVideoBySlug, getAllVideos } = require('../utils/database');
 
 module.exports = async (req, res) => {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Credentials', true);
+  // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    res.status(200).end();
+    return;
   }
 
   if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    const response = JSON.stringify({
+      success: false,
+      error: 'Method not allowed'
+    });
+    res.status(405).send(response);
+    return;
   }
 
   try {
@@ -22,31 +27,43 @@ module.exports = async (req, res) => {
       // Get single video by slug
       const video = await getVideoBySlug(slug);
       if (video) {
-        return res.status(200).json({
+        const responseData = {
           success: true,
-          video
-        });
+          video: video
+        };
+        const response = JSON.stringify(responseData);
+        res.status(200).send(response);
+        return;
       } else {
-        return res.status(404).json({
+        const response = JSON.stringify({
           success: false,
           error: 'Video not found'
         });
+        res.status(404).send(response);
+        return;
       }
     } else {
       // Get paginated list of videos
       const result = await getAllVideos(parseInt(page), parseInt(limit));
-      return res.status(200).json({
+      const responseData = {
         success: true,
-        ...result
-      });
+        videos: result.videos,
+        totalPages: result.totalPages,
+        currentPage: result.currentPage,
+        total: result.total
+      };
+      const response = JSON.stringify(responseData);
+      res.status(200).send(response);
+      return;
     }
 
   } catch (error) {
     console.error('Pages API error:', error);
-    res.status(500).json({ 
+    const errorResponse = JSON.stringify({
       success: false,
       error: 'Internal server error',
-      details: error.message 
+      details: error.message
     });
+    res.status(500).send(errorResponse);
   }
 };
