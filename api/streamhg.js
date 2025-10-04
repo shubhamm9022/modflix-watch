@@ -7,33 +7,47 @@ class StreamHGAPI {
   }
 
   async makeRequest(endpoint, params = {}) {
+    const url = `${this.baseURL}${endpoint}`;
+    console.log(`StreamHG API Call: ${url}`, { params: { ...params, key: '***' } });
+    
     try {
-      const response = await axios.get(`${this.baseURL}${endpoint}`, {
+      const response = await axios.get(url, {
         params: {
           key: this.apiKey,
           ...params
         },
         timeout: 30000,
         validateStatus: function (status) {
-          return status < 500; // Resolve only if status code < 500
+          return status < 500;
         }
       });
 
+      console.log(`StreamHG Response Status: ${response.status}`);
+      console.log(`StreamHG Response Data:`, response.data);
+
       // Check if response is HTML (error page)
-      if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE')) {
-        throw new Error('API returned HTML error page');
+      if (typeof response.data === 'string') {
+        if (response.data.includes('<!DOCTYPE') || response.data.includes('<html')) {
+          throw new Error('API returned HTML page instead of JSON. Possible issues: Invalid API key, Server down, or IP blocked.');
+        }
+        // Try to parse as JSON if it's string but not HTML
+        try {
+          const parsedData = JSON.parse(response.data);
+          return parsedData;
+        } catch (parseError) {
+          throw new Error(`API returned non-JSON response: ${response.data.substring(0, 100)}`);
+        }
       }
 
       return response.data;
     } catch (error) {
+      console.error(`StreamHG API Error for ${endpoint}:`, error.message);
+      
       if (error.response) {
-        // Server responded with error status
-        throw new Error(`StreamHG API Error: ${error.response.status} - ${error.response.statusText}`);
+        throw new Error(`StreamHG API Error ${error.response.status}: ${error.response.statusText}. Data: ${JSON.stringify(error.response.data)}`);
       } else if (error.request) {
-        // No response received
-        throw new Error('StreamHG API: No response received - server may be down');
+        throw new Error('StreamHG API: No response received - server may be down or network issue');
       } else {
-        // Other errors
         throw new Error(`StreamHG API: ${error.message}`);
       }
     }
