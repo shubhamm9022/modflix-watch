@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Host Manager - Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container-fluid">
+        <!-- Admin Login -->
+        <div id="loginSection" class="row justify-content-center align-items-center min-vh-100">
+            <div class="col-md-4">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <h3 class="text-center mb-4">Admin Login</h3>
+                        <div class="mb-3">
+                            <label class="form-label">Password</label>
+                            <input type="password" id="adminPassword" class="form-control" placeholder="Enter admin password">
+                        </div>
+                        <button onclick="login()" class="btn btn-primary w-100">Login</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Admin Panel -->
+        <div id="adminPanel" class="d-none">
+            <!-- Header -->
+            <nav class="navbar navbar-dark bg-dark">
+                <div class="container-fluid">
+                    <span class="navbar-brand">Video Host Manager</span>
+                    <button onclick="logout()" class="btn btn-outline-light btn-sm">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </button>
+                </div>
+            </nav>
+
+            <!-- Upload Section -->
+            <div class="container mt-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-upload"></i> Upload Drive Link</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Drive Link</label>
+                            <input type="url" id="driveLink" class="form-control" placeholder="https://drive.google.com/...">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">File Name (Optional)</label>
+                            <input type="text" id="fileName" class="form-control" placeholder="My Video File">
+                        </div>
+                        <button onclick="uploadLink()" class="btn btn-success">
+                            <i class="fas fa-cloud-upload-alt"></i> Upload to All Hosts
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Upload Progress -->
+                <div id="uploadProgress" class="card mt-3 d-none">
+                    <div class="card-body">
+                        <h6>Upload Progress</h6>
+                        <div class="progress mb-2">
+                            <div id="progressBar" class="progress-bar" style="width: 0%"></div>
+                        </div>
+                        <div id="hostStatus" class="small"></div>
+                    </div>
+                </div>
+
+                <!-- Videos List -->
+                <div class="card mt-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-list"></i> Generated Pages</h5>
+                        <button onclick="loadVideos()" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="videosList"></div>
+                        <nav id="pagination" class="mt-3"></nav>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/admin.js"></script>
+</body>
+</html>
