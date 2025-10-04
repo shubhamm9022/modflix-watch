@@ -31,70 +31,115 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'Drive link is required' });
     }
 
+    // Validate drive link format
+    if (!driveLink.includes('drive.google.com')) {
+      return res.status(400).json({ error: 'Please provide a valid Google Drive link' });
+    }
+
     // Generate unique slug
     const slug = generateSlug();
     
-    // Initialize API clients
-    const streamhg = new StreamHGAPI(process.env.STREAMHG_API_KEY);
-    const earnvids = new EarnVidsAPI(process.env.EARNVIDS_API_KEY);
-    const filemoon = new FileMoonAPI(process.env.FILEMOON_API_KEY);
+    // Initialize API clients with error handling
+    let streamhg, earnvids, filemoon;
+    
+    try {
+      streamhg = new StreamHGAPI(process.env.STREAMHG_API_KEY);
+      earnvids = new EarnVidsAPI(process.env.EARNVIDS_API_KEY);
+      filemoon = new FileMoonAPI(process.env.FILEMOON_API_KEY);
+    } catch (apiError) {
+      return res.status(500).json({ 
+        error: 'API initialization failed',
+        details: apiError.message 
+      });
+    }
 
     // Save initial video record
     const videoData = {
       slug,
       originalLink: driveLink,
       fileName: fileName || 'Unknown File',
-      hosts: {}
+      hosts: {},
+      createdAt: new Date(),
+      status: 'processing'
     };
 
     await saveVideo(videoData);
 
-    // Start parallel uploads
+    // Test API keys first
+    const testResults = await Promise.allSettled([
+      streamhg.getAccountInfo().catch(e => ({ host: 'streamhg', error: e.message })),
+      earnvids.getAccountInfo().catch(e => ({ host: 'earnvids', error: e.message })),
+      filemoon.getAccountInfo().catch(e => ({ host: 'filemoon', error: e.message }))
+    ]);
+
+    const failedAPIs = testResults.filter(result => 
+      result.status === 'rejected' || (result.value && result.value.error)
+    );
+
+    if (failedAPIs.length === 3) {
+      return res.status(500).json({ 
+        error: 'All API keys are invalid or services are down',
+        details: failedAPIs.map(f => f.reason?.message || f.value?.error).join('; ')
+      });
+    }
+
+    // Start parallel uploads with better error handling
     const uploadPromises = [
       streamhg.uploadByURL(driveLink).then(result => ({
         host: 'streamhg',
-        data: result
+        data: result,
+        success: true
       })).catch(error => ({
         host: 'streamhg',
-        error: error.message
+        error: error.message,
+        success: false
       })),
 
       earnvids.uploadByURL(driveLink).then(result => ({
         host: 'earnvids', 
-        data: result
+        data: result,
+        success: true
       })).catch(error => ({
         host: 'earnvids',
-        error: error.message
+        error: error.message,
+        success: false
       })),
 
       filemoon.uploadByURL(driveLink).then(result => ({
         host: 'filemoon',
-        data: result
+        data: result,
+        success: true
       })).catch(error => ({
         host: 'filemoon',
-        error: error.message
+        error: error.message,
+        success: false
       }))
     ];
 
     const results = await Promise.allSettled(uploadPromises);
 
     // Process results and update database
+    let successfulUploads = 0;
+    
     for (const result of results) {
       if (result.status === 'fulfilled') {
-        const { host, data, error } = result.value;
+        const { host, data, error, success } = result.value;
         
-        if (!error && data && data.result) {
+        if (success && data && data.result) {
           const filecode = data.result.filecode || data.result.file_code;
           
           await updateVideoHost(slug, host, {
             filecode,
             status: 'uploading',
-            uploadResponse: data
+            uploadResponse: data,
+            lastUpdated: new Date()
           });
+          successfulUploads++;
         } else {
           await updateVideoHost(slug, host, {
             status: 'failed',
-            error: error
+            error: error || 'Unknown upload error',
+            lastUpdated: new Date()
           });
         }
       }
@@ -107,7 +152,9 @@ module.exports = async (req, res) => {
       success: true,
       slug,
       pageUrl,
-      message: 'Upload started to all hosts. Video will be available shortly.'
+      successfulUploads,
+      totalHosts: 3,
+      message: `Upload started to ${successfulUploads} out of 3 hosts. Video will be available shortly.`
     });
 
   } catch (error) {
