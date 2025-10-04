@@ -4,6 +4,41 @@ const StreamHGAPI = require('./streamhg');
 const EarnVidsAPI = require('./earnvids');
 const FileMoonAPI = require('./filemoon');
 
+// NEW: Google Drive Link Converter
+function convertGoogleDriveLink(driveLink) {
+  try {
+    // Handle different Google Drive link formats
+    
+    // Format 1: https://drive.google.com/file/d/FILE_ID/view
+    const fileIdMatch1 = driveLink.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    
+    // Format 2: https://drive.google.com/open?id=FILE_ID
+    const fileIdMatch2 = driveLink.match(/[&?]id=([a-zA-Z0-9_-]+)/);
+    
+    // Format 3: Direct file ID
+    const fileIdMatch3 = driveLink.match(/^([a-zA-Z0-9_-]+)$/);
+    
+    let fileId = fileIdMatch1?.[1] || fileIdMatch2?.[1] || fileIdMatch3?.[1];
+    
+    if (!fileId) {
+      throw new Error('Invalid Google Drive link format');
+    }
+    
+    // Return direct download link
+    return `https://drive.google.com/uc?export=download&id=${fileId}`;
+    
+  } catch (error) {
+    throw new Error(`Google Drive link conversion failed: ${error.message}`);
+  }
+}
+
+// NEW: Validate if it's a Google Drive link
+function isGoogleDriveLink(link) {
+  return link.includes('drive.google.com') || 
+         link.includes('google.com/file/d/') ||
+         /^[a-zA-Z0-9_-]+$/.test(link); // Just file ID
+}
+
 module.exports = async (req, res) => {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
@@ -31,15 +66,27 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'Drive link is required' });
     }
 
-    // Validate drive link format
-    if (!driveLink.includes('drive.google.com')) {
-      return res.status(400).json({ error: 'Please provide a valid Google Drive link' });
+    // NEW: Convert Google Drive link to direct download link
+    let finalDownloadLink = driveLink;
+    let isDriveLink = false;
+
+    if (isGoogleDriveLink(driveLink)) {
+      try {
+        finalDownloadLink = convertGoogleDriveLink(driveLink);
+        isDriveLink = true;
+        console.log('Converted Google Drive link:', finalDownloadLink);
+      } catch (conversionError) {
+        return res.status(400).json({ 
+          error: 'Invalid Google Drive link',
+          details: conversionError.message 
+        });
+      }
     }
 
     // Generate unique slug
     const slug = generateSlug();
     
-    // Initialize API clients with error handling
+    // Initialize API clients
     let streamhg, earnvids, filemoon;
     
     try {
@@ -57,10 +104,12 @@ module.exports = async (req, res) => {
     const videoData = {
       slug,
       originalLink: driveLink,
+      downloadLink: finalDownloadLink, // NEW: Store converted link
       fileName: fileName || 'Unknown File',
       hosts: {},
       createdAt: new Date(),
-      status: 'processing'
+      status: 'processing',
+      isGoogleDrive: isDriveLink // NEW: Track if it's a Drive link
     };
 
     await saveVideo(videoData);
@@ -83,9 +132,9 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Start parallel uploads with better error handling
+    // NEW: Use the converted download link for uploads
     const uploadPromises = [
-      streamhg.uploadByURL(driveLink).then(result => ({
+      streamhg.uploadByURL(finalDownloadLink).then(result => ({
         host: 'streamhg',
         data: result,
         success: true
@@ -95,7 +144,7 @@ module.exports = async (req, res) => {
         success: false
       })),
 
-      earnvids.uploadByURL(driveLink).then(result => ({
+      earnvids.uploadByURL(finalDownloadLink).then(result => ({
         host: 'earnvids', 
         data: result,
         success: true
@@ -105,7 +154,7 @@ module.exports = async (req, res) => {
         success: false
       })),
 
-      filemoon.uploadByURL(driveLink).then(result => ({
+      filemoon.uploadByURL(finalDownloadLink).then(result => ({
         host: 'filemoon',
         data: result,
         success: true
@@ -154,6 +203,7 @@ module.exports = async (req, res) => {
       pageUrl,
       successfulUploads,
       totalHosts: 3,
+      isGoogleDrive: isDriveLink,
       message: `Upload started to ${successfulUploads} out of 3 hosts. Video will be available shortly.`
     });
 
