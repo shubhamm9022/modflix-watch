@@ -8,7 +8,7 @@ class StreamHGAPI {
 
   async makeRequest(endpoint, params = {}) {
     const url = `${this.baseURL}${endpoint}`;
-    console.log(`StreamHG API Call: ${url}`, { params: { ...params, key: '***' } });
+    console.log(`🔍 StreamHG API Call: ${endpoint}`);
     
     try {
       const response = await axios.get(url, {
@@ -16,37 +16,66 @@ class StreamHGAPI {
           key: this.apiKey,
           ...params
         },
-        timeout: 30000,
-        validateStatus: function (status) {
-          return status < 500;
+        timeout: 15000, // 15 second timeout
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
       });
 
-      console.log(`StreamHG Response Status: ${response.status}`);
-      console.log(`StreamHG Response Data:`, response.data);
-
-      // Check if response is HTML (error page)
-      if (typeof response.data === 'string') {
-        if (response.data.includes('<!DOCTYPE') || response.data.includes('<html')) {
-          throw new Error('API returned HTML page instead of JSON. Possible issues: Invalid API key, Server down, or IP blocked.');
+      // CRITICAL: Check if response is HTML instead of JSON
+      const responseData = response.data;
+      
+      if (typeof responseData === 'string') {
+        // Check for common HTML error patterns
+        if (responseData.includes('<!DOCTYPE') || 
+            responseData.includes('<html') || 
+            responseData.includes('The page') ||
+            responseData.includes('error') ||
+            responseData.trim().startsWith('<')) {
+          
+          console.error('❌ StreamHG returned HTML error:', responseData.substring(0, 200));
+          throw new Error(`StreamHG API Error: Received HTML page instead of JSON. This usually means: 
+          1. Invalid API key: ${this.apiKey ? 'Key is set but may be wrong' : 'Key not set'}
+          2. Service is temporarily down
+          3. IP address blocked
+          Please check your StreamHG API key and account status.`);
         }
-        // Try to parse as JSON if it's string but not HTML
+        
+        // Try to parse as JSON if it's a string
         try {
-          const parsedData = JSON.parse(response.data);
-          return parsedData;
+          return JSON.parse(responseData);
         } catch (parseError) {
-          throw new Error(`API returned non-JSON response: ${response.data.substring(0, 100)}`);
+          throw new Error(`StreamHG API: Invalid JSON response: ${responseData.substring(0, 100)}`);
         }
       }
 
-      return response.data;
+      // If we get proper JSON, check for API errors in the response
+      if (responseData && responseData.status !== 200 && responseData.msg) {
+        throw new Error(`StreamHG API Error: ${responseData.msg}`);
+      }
+
+      console.log(`✅ StreamHG Success: ${endpoint}`);
+      return responseData;
+
     } catch (error) {
-      console.error(`StreamHG API Error for ${endpoint}:`, error.message);
+      console.error(`💥 StreamHG API Error for ${endpoint}:`, error.message);
+      
+      if (error.code === 'ECONNABORTED') {
+        throw new Error('StreamHG API: Request timeout - service may be slow or down');
+      }
       
       if (error.response) {
-        throw new Error(`StreamHG API Error ${error.response.status}: ${error.response.statusText}. Data: ${JSON.stringify(error.response.data)}`);
+        // Server responded with error status
+        const status = error.response.status;
+        if (status === 401 || status === 403) {
+          throw new Error('StreamHG API: Unauthorized - check your API key');
+        } else if (status === 404) {
+          throw new Error('StreamHG API: Endpoint not found');
+        } else {
+          throw new Error(`StreamHG API: Server error ${status}`);
+        }
       } else if (error.request) {
-        throw new Error('StreamHG API: No response received - server may be down or network issue');
+        throw new Error('StreamHG API: No response received - service may be down');
       } else {
         throw new Error(`StreamHG API: ${error.message}`);
       }
@@ -61,15 +90,26 @@ class StreamHGAPI {
     return await this.makeRequest('/file/info', { file_code: filecode });
   }
 
-  async getDirectLink(filecode, ip = '127.0.0.1') {
-    return await this.makeRequest('/file/direct_link', { 
-      file_code: filecode, 
-      ip: ip 
-    });
-  }
-
   async getAccountInfo() {
     return await this.makeRequest('/account/info');
+  }
+
+  // Test if API key is valid
+  async testConnection() {
+    try {
+      const result = await this.getAccountInfo();
+      return {
+        valid: true,
+        account: result.result,
+        message: 'StreamHG API is working correctly'
+      };
+    } catch (error) {
+      return {
+        valid: false,
+        error: error.message,
+        message: 'StreamHG API connection failed'
+      };
+    }
   }
 }
 
